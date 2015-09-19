@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+
+	<head>
+		<meta charset="utf-8">
+
+		<title>Searching Text in PostgreSQL</title>
+
+		<meta name="description" content="Searching Text in PostgreSQL: A Primer">
+		<meta name="author" content="Phil Vacca">
+
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/serif.css" id="theme">
+
+		<!-- Code syntax highlighting -->
+		<link rel="stylesheet" href="lib/css/zenburn.css">
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+
+		<!--[if lt IE 9]>
+		<script src="lib/js/html5shiv.js"></script>
+		<![endif]-->
+	</head>
+
+	<body>
+
+		<div class="reveal">
+
+			<!-- Any section element inside of this container is displayed as a slide -->
+			<div class="slides">
+				<section>
+					<h1>Searching Text in PostgreSQL</h1><h2>A Primer</h2>
+					<br>
+					<div align="left">
+						<img src="img/logo.png" align="right" />
+						<p><small>&nbsp;</small></p>
+					  <p><a href="http://twitter.com/PhilVacca">@PhilVacca</a></p>
+					</div>
+					<!--p><small><a href="http://sixfortwo.com">http://sixfortwo.com</a></small></p-->
+				</section>
+
+				<section>
+					<p>
+						Do you ever have to go sifting through text?
+					</p>
+					<p class="fragment">
+						Like. . .&nbsp;&nbsp;A lot of text?
+					</p>
+					<p class="fragment">Row after row, file after file.</p>
+				</section>
+				<section data-background="img/PrisonerFiles.png" data-background-transition="zoom" data-background-size="1000px">
+					<p class="fragment">How will you ever find that one little thing you need&#8253;</p>
+					<div class="fragment"><h2>Postgres can do this!</h2></div>
+				</section>
+
+				<section>
+					<h2>The Basics</h2>
+				</section>
+
+				<section>
+					<h3>How text is stored</h3>
+					<div class="fragment">
+					<h4>The Character Data Types</h4>
+					<p>In the SQL standard you have two types:</p>
+					<ul><li><code>character (char)</code></li>
+						<li><code>character varying (varchar)</code></li>
+					</ul>
+				</div>
+				</section>
+				<section>
+					<section>
+					  <p>In Postgres, we have both of those, but we also have:</p>
+					  <ul><li><code>text</code></li></ul>
+					  <p class="fragment">Just use text.</p>
+				  </section>
+				  <section>
+						<h4>From the 9.4 entry on character datatypes. . .</h4>
+						<blockquote cite="http://www.postgresql.org/docs/9.4/static/datatype-character.html">
+							&ldquo;While character(n) has performance advantages in some other database systems,
+							there is no such advantage in PostgreSQL; in fact character(n) is usually the slowest
+							of the three because of its additional storage costs.&rdquo;
+						</blockquote>
+				  </section>
+				</section>
+
+				<section>
+					<h3>And some weird ones:</h3>
+					<ul><li><p class="fragment"><code>&quot;char&quot;</code> is <em>not</em> <code>char(1)</code></p></li>
+					<li><p class="fragment"><code>name</code> is reserved for system catalogs</p></li></li>
+				</section>
+
+				<section>
+					<h3>And. . . </h3>
+					<p class="fragment">We also have structured text.</p>
+					<ul>
+						<li><p class="fragment"><code>xml</code></p></li>
+						<li><p class="fragment"><code>json</code></p></li>
+					<li><p class="fragment">But not <code>jsonb</code></p></li></li>
+				</section>
+
+				<section>
+					<p>And let's not even talk about character encodings. . . </p>
+					<p class="fragment">&nbsp;¯\_(ツ)_/¯</p>
+				</section>
+
+				<section>
+					<h3>Querying</h3>
+					<ul>
+						<li><p class="fragment">
+						  <code>like</code> &amp; <code>ilike</code>
+					  </p></li>
+						<li><p class="fragment">
+						  <code>SIMILAR</code>
+					  </p></li>
+					  <li><p class="fragment">
+						  regex <br><code>col ~ E'^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,4}$'</code>
+					  </p></li>
+					</ul>
+				</section>
+
+				<section>
+					<h4>But these methods aren't always that good</h4>
+					<ul>
+						<li><p class="fragment">You need to know the correct spelling in advance</p></li>
+						<li><p class="fragment">Words with the same root don't match (e.g. democracy, democracies)</p></li>
+						<li><p class="fragment">Lack of scalability</p></li>
+					</ul>
+					<p class="fragment"><strong>btree</strong> indexes don't help much</p>
+					<p class="fragment">. . . and expression indexes must match the search that's going to happen</p>
+				</section>
+
+				<section>
+					<h2>Getting around bad spleling with pg_trgm</h2>
+				</section>
+
+				<section>
+					<section>
+						<p><strong>pg_trgm</strong> is an extension for determining word similarity.</p>
+						<p class="fragment">It divides each word in the string into three character segments (left padded with two spaces,
+							and right padded with one).</p>
+						<p class="fragment">It ignores non-alphanumeric characters.</p>
+					</section>
+					<section>
+						<pre><code>CREATE EXTENSION pg_trgm;
+SELECT show_trgm('spleling'), show_trgm('spelling!')
+	, similarity('spleling', 'spelling!')
+	, 'spleling' <-> 'spelling!' as distance
+	, show_limit();</code>
+show_trgm  | {"  s"," sp",eli,ing,lel,lin,"ng ",ple,spl}
+show_trgm  | {"  s"," sp",ell,ing,lin,lli,"ng ",pel,spe}
+similarity | 0.384615
+distance   | 0.615385
+show_limit | 0.3
+						</pre>
+					</section>
+					<section>
+						<pre><code data-trim>SELECT CASE when 'spleling' % 'spelling' then true else false END as default;
+SELECT set_limit(.4) ;
+SELECT CASE when 'spleling' % 'spelling' then true else false END as stricter;</code>
+default | t
+set_limit | 0.4
+stricter | f
+					</section>
+				</section>
+				<section>
+					<section>
+						<h3>Some facts about pg_trgm</h3>
+						<ul><li><p class="fragment">Not case sensitive</p></li>
+							<li><p class="fragment">Word order does not matter</p></li>
+							<li><p class="fragment">But accents do</p></li>
+						</ul>
+					</section>
+					<section>
+						<pre><code>SELECT similarity('I AM SAM', 'Sam I am') ;</code>
+similarity | 1</pre>
+						<pre><code>SELECT similarity('e', 'è') ;</code>
+similarity | 0</pre>
+					</section>
+				</section>
+
+				<section>
+					<h2>Scalability</h2>
+				</section>
+
+				<section>
+					<h4>I will not be pushed, filed, stamped, indexed, briefed, debriefed or numbered.</h4>
+					<div class="fragment"><h4>Wait, indexed?</h4>Ok, that one.</div>
+					<p class="fragment">If you've installed the pg_trgm extension, you will also be able to see massive speed increases for
+						<code>like</code>, <code>ilike</code> and regular expression comparisons by indexing with the GIN or GiST index operator class.</p>
+					<p class="fragment">These indexes will <strong>not</strong> aid in an equality search, though. You can still use a btree index for this purpose.</p>
+				</section>
+
+				<section>
+					<h3>Fancy new index types</h3>
+					<p class="fragment">GiST - Generalized Search Tree is lossy because the underlying data is hashed, and this requires a heap hit to guarantee results.</p>
+					<p class="fragment">GIN - The Generalized Inverted Index is <strong>not</strong> lossy. And it's faster than GiST.</p>
+					<p class="fragment">Although, GIN takes much longer to build, much longer to update, and is much larger on disk.</p>
+				</section>
+
+				<section>
+					<h2>Full Text Search</h2>
+				</section>
+
+				<section>
+					<h3>Full text search is not the literal text</h3>
+					<p class="fragment">In fact, it's not even the <code>text</code> type. Instead we get the <strong>tsvector</strong> type.</p>
+					<ul>
+						<li><p class="fragment">Eliminates case</p></li>
+						<li><p class="fragment">Removes stop words (and, or, not, she, him, and hundreds of others)</p></li>
+						<li><p class="fragment">Replaces synonyms, and takes word <em>stems</em> (elephant -> eleph)</p></li>
+						<li><p class="fragment">Can (and should) be indexed with GIN or GiST</p></li>
+					</ul>
+				</section>
+				<section>
+					<h3>Much, much more</h3>
+					<ul>
+						<li><p class="fragment">Custom ranking with weights &amp; ts_rank</p></li>
+						<li><p class="fragment">Many natural languages (just need the language's dictionary)</p></li>
+						<li><p class="fragment">Array (or json) style contain operators&nbsp;<code>@> <@</code></p></li>
+						<li><p class="fragment">Combining search terms</p></li>
+					</ul>
+				</section>
+
+				<section>
+					<h2>Performance</h2>
+				</section>
+
+				<section>
+					<section>
+						<h2>How does pg_trgm scale?</h2>
+						<div class="fragment"><pre>
+							<code>CREATE TABLE namez(name text);</code></pre></div>
+					</section>
+					<section>
+						<pre><code>with letterz (letter) AS (
+VALUES('A'),('B'),('C'),('D'),('E'),('F'),('G'),('H')
+    ,('I'),('J'),('K'),('L'),('M'),('N'),('O'),('P'),('Q')
+    ,('R'),('S'),('T'),('U'),('V'),('W'),('X'),('Y'),('Z')
+)
+INSERT INTO namez
+SELECT surname || z1.letter || z2.letter
+from names as s
+CROSS JOIN letterz as z1
+CROSS JOIN letterz as z2
+;</code>
+INSERT 0 676000
+Time: 834.743 ms
+</pre>
+					</section>
+					<section>
+						<pre><code>CREATE UNIQUE INDEX uq_namez_name on namez(upper(surname));</code>
+CREATE INDEX
+Time: 10021.628 ms</pre>
+						<div class="fragment"><pre><code>SELECT count(*) from namez where surname % 'miller' ;
+-- no index, pg_trgm CI operator</code>
+count | 1361
+Time: 658.001 ms</pre></div>
+<div class="fragment"><pre><code>SELECT count(*) from namez where surname ilike 'mill%' ;
+-- no index, ilike</code>
+count | 1352
+Time: 271.624 ms</pre></div>
+					</section>
+					<section>
+						<pre><code>CREATE INDEX ix_trgm_namez on namez USING gist (surname gist_trgm_ops);</code>
+CREATE INDEX
+Time: 11230.830 ms</pre>
+						<div class="fragment"><pre><code>SELECT count(*) from namez where surname % 'miller' ;</code>
+count | 1361
+Time: 64.845 ms</pre></div>
+						<div class="fragment"><pre><code>SELECT count(*) from namez where surname ilike 'mill%' ;</code>
+count | 1352
+Time: 17.044 ms</pre></div>
+					</section>
+				</section>
+				<section>
+					<section>
+						<h2>Let's do it again, bigger<h2>
+					</section>
+					<section><pre><code>with letterz (letter) AS (
+VALUES('A'),('B'),('C'),('D'),('E'),('F'),('G'),('H')
+    ,('I'),('J'),('K'),('L'),('M'),('N'),('O'),('P'),('Q')
+    ,('R'),('S'),('T'),('U'),('V'),('W'),('X'),('Y'),('Z')
+)
+INSERT INTO namez
+SELECT surname || z1.letter || z2.letter ||z3.letter || z4.letter
+from names as s
+CROSS JOIN letterz as z1
+CROSS JOIN letterz as z2
+CROSS JOIN letterz as z3
+CROSS JOIN (SELECT letter from letterz where letter < 'I') as z4
+;</code>
+INSERT 0 140608000
+Time: 123886.457 ms</pre>
+					</section>
+					<section><pre><code>CREATE UNIQUE INDEX uq_namez_name on namez(upper(surname));</code>
+Time: 4391822.101 ms
+<code>ANALYZE FULL namez;</code>
+</pre>
+					</section>
+				</section>
+
+				<section>
+					<h3>Full text search</h3>
+					<div class="fragment"><pre>
+						<code>SELECT count(*)
+  from pages
+ where content_vector @@ to_tsquery('elephant') ;</code>
+count | 8792
+Time: 22767.201 ms</pre></div>
+					<div class="fragment"><pre>
+						<code>time cat x3 |grep 'elephant' |wc -l</code>
+3039
+real	1m25.309s</pre></div>
+				</section>
+
+
+				<section>
+					<h3>Thanks, #pgOpen!</h3>
+					<div class="fragment">
+						<img src="img/logo.png" align="left">
+						<ul>
+						<li>Follow me <a href="https://twitter.com/PhilVacca">@PhilVacca</a></li>
+						<li><a href="http://gplus.to/philv">http://gplus.to/philv</a></li>
+						<li><a href="http://sixfortwo.com">http://sixfortwo.com</a></li>
+					</ul></div>
+					<br>
+						<p class="fragment">This presentation was built in <a href="https://github.com/hakimel/reveal.js">reveal.js</a></p>
+					<div class="fragment"><h2>Be Seeing You!</h2><img src="img/PennyFarthing.svg.png" align="right"></div>
+				</section>
+
+			</div>
+
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.js"></script>
+
+		<script>
+
+			// Full list of configuration options available at:
+			// https://github.com/hakimel/reveal.js#configuration
+			Reveal.initialize({
+				controls: true,
+				progress: true,
+				history: true,
+				center: true,
+
+				transition: 'slide', // none/fade/slide/convex/concave/zoom
+
+				// Optional reveal.js plugins
+				dependencies: [
+					{ src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+					{ src: 'plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/highlight/highlight.js', async: true, condition: function() { return !!document.querySelector( 'pre code' ); }, callback: function() { hljs.initHighlightingOnLoad(); } },
+					{ src: 'plugin/zoom-js/zoom.js', async: true },
+					{ src: 'plugin/notes/notes.js', async: true }
+				]
+			});
+
+		</script>
+
+	</body>
+</html>
